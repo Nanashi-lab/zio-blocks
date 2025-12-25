@@ -118,6 +118,35 @@ private class SchemaVersionSpecificImpl(using Quotes) {
     case _ => false
   }
 
+  // Constant/literal type detection (e.g., "Active", 42, true)
+  private def isConstantType(tpe: TypeRepr): Boolean = tpe match {
+    case ConstantType(_) => true
+    case _               => false
+  }
+
+  // Structural type detection - check if type is a refinement with val members
+  private def isStructuralType(tpe: TypeRepr): Boolean = {
+    val fields = extractStructuralFields(tpe)
+    fields.nonEmpty || tpe =:= TypeRepr.of[scala.Selectable]
+  }
+
+  // Extract fields from a structural/refinement type
+  // Returns a list of (fieldName, fieldType) pairs
+  private def extractStructuralFields(tpe: TypeRepr): List[(String, TypeRepr)] = {
+    def collectFields(t: TypeRepr, acc: List[(String, TypeRepr)]): List[(String, TypeRepr)] = t match {
+      case Refinement(parent, name, info) =>
+        val updatedAcc = info match {
+          case TypeBounds(_, _)          => acc                       // Type member, skip
+          case ByNameType(underlying)    => (name, underlying) :: acc // ByName member (def without parens)
+          case MethodType(_, _, resType) => (name, resType) :: acc    // Method member (def with parens)
+          case fieldType                 => (name, fieldType) :: acc  // Val member
+        }
+        collectFields(parent, updatedAcc)
+      case _ => acc
+    }
+    collectFields(tpe, Nil)
+  }
+
   private def typeRefDealias(tpe: TypeRepr): TypeRepr = tpe match {
     case trTpe: TypeRef =>
       val sTpe = trTpe.translucentSuperType.dealias
@@ -204,6 +233,10 @@ private class SchemaVersionSpecificImpl(using Quotes) {
             isNonRecursive(opaqueDealias(tpe), nestedTpes_)
           } else if (isZioPreludeNewtype(tpe)) {
             isNonRecursive(zioPreludeNewtypeDealias(tpe), nestedTpes_)
+          } else if (isStructuralType(tpe)) {
+            extractStructuralFields(tpe).forall { case (_, fTpe) =>
+              isNonRecursive(fTpe.dealias, nestedTpes_)
+            }
           } else if (isTypeRef(tpe)) {
             isNonRecursive(typeRefDealias(tpe), nestedTpes_)
           } else false
@@ -215,7 +248,20 @@ private class SchemaVersionSpecificImpl(using Quotes) {
   private def typeName[T: Type](tpe: TypeRepr, nestedTpes: List[TypeRepr] = Nil): TypeName[T] = {
     def calculateTypeName(tpe: TypeRepr): TypeName[?] =
       if (tpe =:= TypeRepr.of[java.lang.String]) TypeName.string
-      else {
+      else if (isConstantType(tpe)) {
+        // Handle singleton literal types like "Active", 42, true
+        val literalName = tpe match {
+          case ConstantType(StringConstant(s))  => s"\"$s\""
+          case ConstantType(IntConstant(i))     => i.toString
+          case ConstantType(LongConstant(l))    => s"${l}L"
+          case ConstantType(FloatConstant(f))   => s"${f}f"
+          case ConstantType(DoubleConstant(d))  => d.toString
+          case ConstantType(BooleanConstant(b)) => b.toString
+          case ConstantType(CharConstant(c))    => s"'$c'"
+          case ConstantType(c)                  => c.toString
+        }
+        new TypeName(Namespace.empty, literalName, Nil)
+      } else {
         var packages: List[String] = Nil
         var values: List[String]   = Nil
         var name: String           = null
@@ -289,6 +335,16 @@ private class SchemaVersionSpecificImpl(using Quotes) {
     val ps       = tpeName.params
     val params   = if (ps.isEmpty) '{ Nil } else Varargs(ps.map(param => toExpr(param.asInstanceOf[TypeName[T]])))
     '{ new TypeName[T](new Namespace($packages, $values), $name, $params) }
+  }
+
+  // Generate structural TypeName for a structural type
+  private def structuralTypeName[T: Type](fields: List[(String, TypeRepr)])(using Quotes): Expr[TypeName[T]] = {
+    val fieldExprs = fields.map { case (name, fTpe) =>
+      val nameExpr     = Expr(name)
+      val typeNameExpr = toExpr(typeName[Any](fTpe).asInstanceOf[TypeName[Any]])
+      '{ ($nameExpr, $typeNameExpr) }
+    }
+    '{ TypeName.structural[T](Seq(${ Varargs(fieldExprs) }*)) }
   }
 
   private def doc(tpe: TypeRepr)(using Quotes): Expr[Doc] = {
@@ -662,8 +718,93 @@ private class SchemaVersionSpecificImpl(using Quotes) {
       })
   }
 
+  private class StructuralTypeInfo[T: Type](tpe: TypeRepr) extends TypeInfo {
+    // Extract fields from the structural type
+    private val structuralFields: List[(String, TypeRepr)] = extractStructuralFields(tpe)
+
+    val tpeTypeArgs: List[TypeRepr] = Nil
+
+    val (fieldInfos: List[FieldInfo], usedRegisters: Expr[RegisterOffset]) = {
+      var usedRegisters = RegisterOffset.Zero
+      (
+        structuralFields.map { case (name, fTpe) =>
+          val fieldInfo = new FieldInfo(name, fTpe.dealias, None, Symbol.noSymbol, usedRegisters, Nil)
+          usedRegisters = RegisterOffset.add(usedRegisters, fieldOffset(fTpe.dealias))
+          fieldInfo
+        },
+        Expr(usedRegisters)
+      )
+    }
+
+    def fields[S: Type](nameOverrides: Array[String])(using Quotes): Expr[Seq[SchemaTerm[Binding, S, ?]]] = {
+      var idx = -1
+      Varargs(fieldInfos.map { fieldInfo =>
+        idx += 1
+        val fTpe = fieldInfo.tpe
+        fTpe.asType match {
+          case '[ft] =>
+            val schema = findImplicitOrDeriveSchema[ft](fTpe)
+            val name   = Expr {
+              if (idx < nameOverrides.length) nameOverrides(idx)
+              else fieldInfo.name
+            }
+            if (isNonRecursive(fTpe)) '{ $schema.reflect.asTerm[S]($name) }
+            else '{ new Reflect.Deferred(() => $schema.reflect).asTerm[S]($name) }
+        }
+      })
+    }
+
+    def constructor(in: Expr[Registers], baseOffset: Expr[RegisterOffset])(using Quotes): Expr[T] = {
+      // Build field infos for StructuralConstructor at compile time
+      val fieldInfoExprs = fieldInfos.map { fieldInfo =>
+        val fTpe          = fieldInfo.tpe
+        val name          = Expr(fieldInfo.name)
+        val offset        = Expr(fieldInfo.usedRegisters)
+        val primitiveType = Expr(primitiveTypeCode(fTpe))
+        '{ StructuralFieldInfo($name, $offset, $primitiveType) }
+      }
+      val fieldsExpr = '{ IndexedSeq(${ Varargs(fieldInfoExprs) }*) }
+      '{
+        val constructor = new StructuralConstructor[T]($fieldsExpr, $usedRegisters)
+        constructor.construct($in, $baseOffset)
+      }
+    }
+
+    def deconstructor(out: Expr[Registers], baseOffset: Expr[RegisterOffset], in: Expr[T])(using Quotes): Term = {
+      // Build field infos for StructuralDeconstructor at compile time
+      val fieldInfoExprs = fieldInfos.map { fieldInfo =>
+        val fTpe          = fieldInfo.tpe
+        val name          = Expr(fieldInfo.name)
+        val offset        = Expr(fieldInfo.usedRegisters)
+        val primitiveType = Expr(primitiveTypeCode(fTpe))
+        '{ StructuralFieldInfo($name, $offset, $primitiveType) }
+      }
+      val fieldsExpr = '{ IndexedSeq(${ Varargs(fieldInfoExprs) }*) }
+      '{
+        val deconstructor = new StructuralDeconstructor[T]($fieldsExpr, $usedRegisters)
+        deconstructor.deconstruct($out, $baseOffset, $in)
+      }.asTerm
+    }
+
+    // Returns primitive type code for StructuralFieldInfo
+    private def primitiveTypeCode(fTpe: TypeRepr): Int = {
+      val sTpe = dealiasOnDemand(fTpe)
+      if (sTpe <:< booleanTpe) StructuralFieldInfo.Boolean
+      else if (sTpe <:< byteTpe) StructuralFieldInfo.Byte
+      else if (sTpe <:< shortTpe) StructuralFieldInfo.Short
+      else if (sTpe <:< intTpe) StructuralFieldInfo.Int
+      else if (sTpe <:< longTpe) StructuralFieldInfo.Long
+      else if (sTpe <:< floatTpe) StructuralFieldInfo.Float
+      else if (sTpe <:< doubleTpe) StructuralFieldInfo.Double
+      else if (sTpe <:< charTpe) StructuralFieldInfo.Char
+      else StructuralFieldInfo.Object
+    }
+  }
+
   private def deriveSchema[T: Type](tpe: TypeRepr)(using Quotes): Expr[Schema[T]] = {
-    if (isEnumOrModuleValue(tpe)) {
+    if (isConstantType(tpe)) {
+      deriveSchemaForConstantType(tpe)
+    } else if (isEnumOrModuleValue(tpe)) {
       deriveSchemaForEnumOrModuleValue(tpe)
     } else if (isCollection(tpe)) {
       if (tpe <:< arrayOfWildcardTpe) {
@@ -908,6 +1049,8 @@ private class SchemaVersionSpecificImpl(using Quotes) {
           val tpeName = toExpr(typeName[T](tpe).asInstanceOf[TypeName[s]])
           '{ new Schema($schema.reflect.typeName($tpeName)).asInstanceOf[Schema[T]] }
       }
+    } else if (isStructuralType(tpe)) {
+      deriveSchemaForStructuralType(tpe)
     } else if (isTypeRef(tpe)) {
       val sTpe = typeRefDealias(tpe)
       sTpe.asType match { case '[s] => deriveSchema[s](sTpe) }
@@ -932,6 +1075,34 @@ private class SchemaVersionSpecificImpl(using Quotes) {
           ),
           doc = ${ doc(tpe) },
           modifiers = ${ modifiers(tpe) }
+        )
+      )
+    }
+  }
+
+  private def deriveSchemaForConstantType[T: Type](tpe: TypeRepr)(using Quotes): Expr[Schema[T]] = {
+    val tpeName           = toExpr(typeName(tpe))
+    val constant: Expr[T] = tpe match {
+      case ConstantType(StringConstant(s))  => Expr(s).asInstanceOf[Expr[T]]
+      case ConstantType(IntConstant(i))     => Expr(i).asInstanceOf[Expr[T]]
+      case ConstantType(LongConstant(l))    => Expr(l).asInstanceOf[Expr[T]]
+      case ConstantType(FloatConstant(f))   => Expr(f).asInstanceOf[Expr[T]]
+      case ConstantType(DoubleConstant(d))  => Expr(d).asInstanceOf[Expr[T]]
+      case ConstantType(BooleanConstant(b)) => Expr(b).asInstanceOf[Expr[T]]
+      case ConstantType(CharConstant(c))    => Expr(c).asInstanceOf[Expr[T]]
+      case ConstantType(ByteConstant(b))    => Expr(b).asInstanceOf[Expr[T]]
+      case ConstantType(ShortConstant(s))   => Expr(s).asInstanceOf[Expr[T]]
+      case _                                => fail(s"Unsupported constant type: ${tpe.show}")
+    }
+    '{
+      new Schema(
+        reflect = new Reflect.Record[Binding, T](
+          fields = Vector.empty,
+          typeName = $tpeName,
+          recordBinding = new Binding.Record(
+            constructor = new ConstantConstructor($constant),
+            deconstructor = new ConstantDeconstructor
+          )
         )
       )
     }
@@ -964,6 +1135,37 @@ private class SchemaVersionSpecificImpl(using Quotes) {
           ),
           doc = ${ doc(tpe) },
           modifiers = ${ modifiers(tpe) }
+        )
+      )
+    }
+  }
+
+  private def deriveSchemaForStructuralType[T: Type](tpe: TypeRepr)(using Quotes): Expr[Schema[T]] = {
+    val structuralTypeInfo = new StructuralTypeInfo[T](tpe)
+    val fields             = structuralTypeInfo.fields[T](Array.empty[String])
+    val structuralFields   = extractStructuralFields(tpe)
+    val tpeName            = structuralTypeName[T](structuralFields)
+    '{
+      new Schema(
+        reflect = new Reflect.Record[Binding, T](
+          fields = Vector($fields*),
+          typeName = $tpeName,
+          recordBinding = new Binding.Record(
+            constructor = new Constructor {
+              def usedRegisters: RegisterOffset = ${ structuralTypeInfo.usedRegisters }
+
+              def construct(in: Registers, baseOffset: RegisterOffset): T = ${
+                structuralTypeInfo.constructor('in, 'baseOffset)
+              }
+            },
+            deconstructor = new Deconstructor {
+              def usedRegisters: RegisterOffset = ${ structuralTypeInfo.usedRegisters }
+
+              def deconstruct(out: Registers, baseOffset: RegisterOffset, in: T): Unit = ${
+                structuralTypeInfo.deconstructor('out, 'baseOffset, 'in).asExpr
+              }
+            }
+          )
         )
       )
     }
