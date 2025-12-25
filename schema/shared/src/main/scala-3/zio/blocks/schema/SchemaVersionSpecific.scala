@@ -1081,7 +1081,7 @@ private class SchemaVersionSpecificImpl(using Quotes) {
   }
 
   private def deriveSchemaForConstantType[T: Type](tpe: TypeRepr)(using Quotes): Expr[Schema[T]] = {
-    val tpeName = toExpr(typeName(tpe))
+    val tpeName           = toExpr(typeName(tpe))
     val constant: Expr[T] = tpe match {
       case ConstantType(StringConstant(s))  => Expr(s).asInstanceOf[Expr[T]]
       case ConstantType(IntConstant(i))     => Expr(i).asInstanceOf[Expr[T]]

@@ -529,7 +529,7 @@ object DeriveToStructural {
 
                     val body = childTpe.asType match {
                       case '[ct] =>
-                        val ref = Ref(bindSymbol).asExprOf[ct]
+                        val ref       = Ref(bindSymbol).asExprOf[ct]
                         val converted = transformExpr(ref, Type.of[ct])
                         '{
                           val base = $converted.asInstanceOf[StructuralValue]
