@@ -154,9 +154,14 @@ object StructuralIntegrationSpec extends ZIOSpecDefault {
 
       val sValue = ts.toStructural(holder)
       val sv     = sValue.asInstanceOf[StructuralValue]
-      val result = sv.selectDynamic("result").asInstanceOf[Either[String, Int]]
+      val result = sv.selectDynamic("result").asInstanceOf[Either[Any, Any]]
 
-      assertTrue(result == Right(42))
+      result match {
+        case Right(v) =>
+          val rSv = v.asInstanceOf[StructuralValue]
+          assertTrue(rSv.selectDynamic("value") == 42)
+        case _ => assertTrue(false)
+      }
     },
     test("Either in structural types - Left") {
       val holder = EitherHolder(Left("error"))
@@ -164,9 +169,14 @@ object StructuralIntegrationSpec extends ZIOSpecDefault {
 
       val sValue = ts.toStructural(holder)
       val sv     = sValue.asInstanceOf[StructuralValue]
-      val result = sv.selectDynamic("result").asInstanceOf[Either[String, Int]]
+      val result = sv.selectDynamic("result").asInstanceOf[Either[Any, Any]]
 
-      assertTrue(result == Left("error"))
+      result match {
+        case Left(v) =>
+          val lSv = v.asInstanceOf[StructuralValue]
+          assertTrue(lSv.selectDynamic("value") == "error")
+        case _ => assertTrue(false)
+      }
     },
     test("3-tuple converts to structural types") {
       val tuple = ("a", 1, true)

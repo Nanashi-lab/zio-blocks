@@ -118,6 +118,12 @@ private class SchemaVersionSpecificImpl(using Quotes) {
     case _ => false
   }
 
+  // Constant/literal type detection (e.g., "Active", 42, true)
+  private def isConstantType(tpe: TypeRepr): Boolean = tpe match {
+    case ConstantType(_) => true
+    case _               => false
+  }
+
   // Structural type detection - check if type is a refinement with val members
   private def isStructuralType(tpe: TypeRepr): Boolean = {
     val fields = extractStructuralFields(tpe)
@@ -242,7 +248,20 @@ private class SchemaVersionSpecificImpl(using Quotes) {
   private def typeName[T: Type](tpe: TypeRepr, nestedTpes: List[TypeRepr] = Nil): TypeName[T] = {
     def calculateTypeName(tpe: TypeRepr): TypeName[?] =
       if (tpe =:= TypeRepr.of[java.lang.String]) TypeName.string
-      else {
+      else if (isConstantType(tpe)) {
+        // Handle singleton literal types like "Active", 42, true
+        val literalName = tpe match {
+          case ConstantType(StringConstant(s))  => s"\"$s\""
+          case ConstantType(IntConstant(i))     => i.toString
+          case ConstantType(LongConstant(l))    => s"${l}L"
+          case ConstantType(FloatConstant(f))   => s"${f}f"
+          case ConstantType(DoubleConstant(d))  => d.toString
+          case ConstantType(BooleanConstant(b)) => b.toString
+          case ConstantType(CharConstant(c))    => s"'$c'"
+          case ConstantType(c)                  => c.toString
+        }
+        new TypeName(Namespace.empty, literalName, Nil)
+      } else {
         var packages: List[String] = Nil
         var values: List[String]   = Nil
         var name: String           = null
@@ -783,7 +802,9 @@ private class SchemaVersionSpecificImpl(using Quotes) {
   }
 
   private def deriveSchema[T: Type](tpe: TypeRepr)(using Quotes): Expr[Schema[T]] = {
-    if (isEnumOrModuleValue(tpe)) {
+    if (isConstantType(tpe)) {
+      deriveSchemaForConstantType(tpe)
+    } else if (isEnumOrModuleValue(tpe)) {
       deriveSchemaForEnumOrModuleValue(tpe)
     } else if (isCollection(tpe)) {
       if (tpe <:< arrayOfWildcardTpe) {
@@ -1054,6 +1075,34 @@ private class SchemaVersionSpecificImpl(using Quotes) {
           ),
           doc = ${ doc(tpe) },
           modifiers = ${ modifiers(tpe) }
+        )
+      )
+    }
+  }
+
+  private def deriveSchemaForConstantType[T: Type](tpe: TypeRepr)(using Quotes): Expr[Schema[T]] = {
+    val tpeName = toExpr(typeName(tpe))
+    val constant: Expr[T] = tpe match {
+      case ConstantType(StringConstant(s))  => Expr(s).asInstanceOf[Expr[T]]
+      case ConstantType(IntConstant(i))     => Expr(i).asInstanceOf[Expr[T]]
+      case ConstantType(LongConstant(l))    => Expr(l).asInstanceOf[Expr[T]]
+      case ConstantType(FloatConstant(f))   => Expr(f).asInstanceOf[Expr[T]]
+      case ConstantType(DoubleConstant(d))  => Expr(d).asInstanceOf[Expr[T]]
+      case ConstantType(BooleanConstant(b)) => Expr(b).asInstanceOf[Expr[T]]
+      case ConstantType(CharConstant(c))    => Expr(c).asInstanceOf[Expr[T]]
+      case ConstantType(ByteConstant(b))    => Expr(b).asInstanceOf[Expr[T]]
+      case ConstantType(ShortConstant(s))   => Expr(s).asInstanceOf[Expr[T]]
+      case _                                => fail(s"Unsupported constant type: ${tpe.show}")
+    }
+    '{
+      new Schema(
+        reflect = new Reflect.Record[Binding, T](
+          fields = Vector.empty,
+          typeName = $tpeName,
+          recordBinding = new Binding.Record(
+            constructor = new ConstantConstructor($constant),
+            deconstructor = new ConstantDeconstructor
+          )
         )
       )
     }

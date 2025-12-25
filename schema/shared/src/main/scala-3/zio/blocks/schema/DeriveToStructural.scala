@@ -234,10 +234,23 @@ object DeriveToStructural {
           TypeRepr.of[Map].appliedTo(List(k, v))
 
         case TypeCategory.EitherType(left, right) =>
-          // Either[L, R] → Either[structural(L), structural(R)]
+          // Either[L, R] -> Either[{ type Tag = "Left"; def value: structural(L) }, { type Tag = "Right"; def value: structural(R) }]
           val l = transformType(left, seen + dealt)
           val r = transformType(right, seen + dealt)
-          TypeRepr.of[Either].appliedTo(List(l, r))
+
+          def makeTagged(tag: String, valueType: TypeRepr): TypeRepr = {
+            val base = TypeRepr.of[Selectable]
+            // Add type Tag = "..."
+            val tagType = ConstantType(StringConstant(tag))
+            val withTag = Refinement(base, "Tag", TypeBounds(tagType, tagType))
+            // Add def value: valueType
+            Refinement(withTag, "value", valueType)
+          }
+
+          val lRefined = makeTagged("Left", l)
+          val rRefined = makeTagged("Right", r)
+
+          TypeRepr.of[Either].appliedTo(List(lRefined, rRefined))
 
         case TypeCategory.TupleType(elements) =>
           // (T1, T2, T3) → Selectable { def _1: structural(T1); def _2: structural(T2); def _3: structural(T3) }
@@ -264,9 +277,9 @@ object DeriveToStructural {
 
         case TypeCategory.SealedType(children) =>
           // sealed trait Result with children Success(value: Int) and Failure(error: String)
-          //   → { def value: Int } | { def error: String }
-          val childTypes = children.map { childSym =>
-            if (childSym.isTerm) {
+          //   → { type Tag = "Success"; def value: Int } | { type Tag = "Failure"; def error: String }
+          val childStructuralTypes = children.map { childSym =>
+            val childType = if (childSym.isTerm) {
               // Case object → empty structural type {}
               TypeRepr.of[Selectable]
             } else {
@@ -281,14 +294,20 @@ object DeriveToStructural {
                 cType
               }
             }
+
+            // Transform child to structural
+            val structType = transformType(childType, seen + dealt)
+
+            // Add Tag refinement
+            val tagName = childSym.name
+            val tagType = ConstantType(StringConstant(tagName))
+            Refinement(structType, "Tag", tagType)
           }
 
-          if (childTypes.isEmpty) {
+          if (childStructuralTypes.isEmpty) {
             TypeRepr.of[Nothing]
           } else {
-            // Transform each child to structural and combine with OrType (union)
-            val structuralChildren = childTypes.map(ct => transformType(ct, seen + dealt))
-            structuralChildren.reduce((a, b) => OrType(a, b))
+            childStructuralTypes.reduce((a, b) => OrType(a, b))
           }
       }
     }
@@ -422,7 +441,10 @@ object DeriveToStructural {
           }
 
         case LocalCategory.EitherType =>
-          // Generate: either match { case Left(v) => Left(transformExpr(v)); case Right(v) => Right(transformExpr(v)) }
+          // Generate: either match {
+          //   case Left(v) => Left(new StructuralValue(Map("value" -> transformExpr(v))))
+          //   case Right(v) => Right(new StructuralValue(Map("value" -> transformExpr(v))))
+          // }
           val lTpe       = dealt.typeArgs(0)
           val rTpe       = dealt.typeArgs(1)
           val eitherExpr = expr.asExprOf[Either[Any, Any]]
@@ -430,8 +452,14 @@ object DeriveToStructural {
             case ('[l], '[r]) =>
               '{
                 $eitherExpr match {
-                  case Left(v)  => Left(${ transformExpr('v, Type.of[l]) })
-                  case Right(v) => Right(${ transformExpr('v, Type.of[r]) })
+                  case Left(v) =>
+                    val transformedV = ${ transformExpr('v, Type.of[l]) }
+                    val sv           = new StructuralValue(Map("value" -> transformedV))
+                    Left(sv)
+                  case Right(v) =>
+                    val transformedV = ${ transformExpr('v, Type.of[r]) }
+                    val sv           = new StructuralValue(Map("value" -> transformedV))
+                    Right(sv)
                 }
               }
             case _ => report.errorAndAbort("Unexpected type structure for Either")
@@ -474,10 +502,11 @@ object DeriveToStructural {
             val term = expr.asTerm
 
             val cases = children.map { childSym =>
+              val tagName = childSym.name
               if (childSym.isTerm) {
-                // Case object → StructuralValue(Map.empty)
+                // Case object → StructuralValue(Map("Tag" -> "ChildName"))
                 val pattern = Ref(childSym)
-                val body    = '{ new StructuralValue(Map.empty) }.asTerm
+                val body    = '{ new StructuralValue(Map("Tag" -> ${ Expr(tagName) })) }.asTerm
                 CaseDef(pattern, None, body)
               } else {
                 // Case class child → recursively transform it
@@ -501,7 +530,11 @@ object DeriveToStructural {
                     val body = childTpe.asType match {
                       case '[ct] =>
                         val ref = Ref(bindSymbol).asExprOf[ct]
-                        transformExpr(ref, Type.of[ct]).asTerm
+                        val converted = transformExpr(ref, Type.of[ct])
+                        '{
+                          val base = $converted.asInstanceOf[StructuralValue]
+                          new StructuralValue(base.values + ("Tag" -> ${ Expr(tagName) }))
+                        }.asTerm
                     }
 
                     CaseDef(pattern, None, body)

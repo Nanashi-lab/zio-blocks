@@ -69,12 +69,12 @@ object StructuralSumTypeSpec extends ZIOSpecDefault {
       val on  = ts.toStructural(On)
       val off = ts.toStructural(Off)
 
-      // Case objects should produce empty StructuralValues
+      // Case objects should produce StructuralValues with Tag
       val svOn  = on.asInstanceOf[StructuralValue]
       val svOff = off.asInstanceOf[StructuralValue]
 
-      // They should be valid StructuralValue instances
-      assertTrue(svOn != null) && assertTrue(svOff != null)
+      assertTrue(svOn.selectDynamic("Tag") == "On") &&
+      assertTrue(svOff.selectDynamic("Tag") == "Off")
     },
     test("enum with simple cases converts to structural") {
       val ts = ToStructural.derived[Color]
@@ -83,10 +83,10 @@ object StructuralSumTypeSpec extends ZIOSpecDefault {
       val green = ts.toStructural(Color.Green)
       val blue  = ts.toStructural(Color.Blue)
 
-      // Simple enum cases should produce StructuralValues
-      assertTrue(red.asInstanceOf[StructuralValue] != null) &&
-      assertTrue(green.asInstanceOf[StructuralValue] != null) &&
-      assertTrue(blue.asInstanceOf[StructuralValue] != null)
+      // Simple enum cases should produce StructuralValues with Tag
+      assertTrue(red.asInstanceOf[StructuralValue].selectDynamic("Tag") == "Red") &&
+      assertTrue(green.asInstanceOf[StructuralValue].selectDynamic("Tag") == "Green") &&
+      assertTrue(blue.asInstanceOf[StructuralValue].selectDynamic("Tag") == "Blue")
     },
     test("enum with parameterized cases converts to structural") {
       val ts = ToStructural.derived[Shape]
@@ -101,8 +101,10 @@ object StructuralSumTypeSpec extends ZIOSpecDefault {
       val svRect   = sRect.asInstanceOf[StructuralValue]
 
       assertTrue(svCircle.selectDynamic("radius") == 5.0) &&
+      assertTrue(svCircle.selectDynamic("Tag") == "Circle") &&
       assertTrue(svRect.selectDynamic("width") == 3.0) &&
-      assertTrue(svRect.selectDynamic("height") == 4.0)
+      assertTrue(svRect.selectDynamic("height") == 4.0) &&
+      assertTrue(svRect.selectDynamic("Tag") == "Rectangle")
     }
   )
 }

@@ -125,6 +125,6 @@ class StructuralDeconstructor[A](
  * A Dynamic implementation that stores field values in a Map. Extends
  * scala.Selectable to support selectDynamic calls for structural types.
  */
-class StructuralValue(values: Map[String, Any]) extends scala.Selectable {
+class StructuralValue(val values: Map[String, Any]) extends scala.Selectable {
   def selectDynamic(name: String): Any = values.get(name).orNull
 }

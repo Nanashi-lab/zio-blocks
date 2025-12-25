@@ -233,10 +233,12 @@ object DeriveToStructural {
           tq"_root_.scala.collection.immutable.Map[$k,$v]"
 
         case TypeCategory.EitherType(left, right) =>
-          // Either[L, R] → Either[structural(L), structural(R)]
+          // Either[L, R] -> Either[{ type Tag = "Left"; def value: structural(L) }, { type Tag = "Right"; def value: structural(R) }]
           val l = structuralTypeTree(left, seen + dealt)
           val r = structuralTypeTree(right, seen + dealt)
-          tq"_root_.scala.Either[$l,$r]"
+          val leftTag  = Literal(Constant("Left"))
+          val rightTag = Literal(Constant("Right"))
+          tq"_root_.scala.Either[_root_.zio.blocks.schema.binding.StructuralValue { type Tag = $leftTag; def value: $l }, _root_.zio.blocks.schema.binding.StructuralValue { type Tag = $rightTag; def value: $r }]"
 
         case TypeCategory.TupleType(elements) =>
           // (T1, T2, T3) → StructuralValue { def _1: structural(T1); def _2: structural(T2); def _3: structural(T3) }
@@ -303,10 +305,27 @@ object DeriveToStructural {
           q"$expr.map { case (k, v) => ($kbody, $vbody) }"
 
         case TypeCategory.EitherType(left, right) =>
-          // Generate: either match { case Left(v) => Left(convertExpr(v)); case Right(v) => Right(convertExpr(v)) }
+          // Generate: either match { case Left(v) => Left(StructuralValue(Map("value" -> convert(v)))); ... }
           val lbody = convertExpr(Ident(TermName("l")), left, seen + dealt)
           val rbody = convertExpr(Ident(TermName("r")), right, seen + dealt)
-          q"$expr match { case scala.util.Left(l) => scala.util.Left($lbody); case scala.util.Right(r) => scala.util.Right($rbody) }"
+          val lType = structuralTypeTree(left, seen + dealt)
+          val rType = structuralTypeTree(right, seen + dealt)
+          val leftTag  = Literal(Constant("Left"))
+          val rightTag = Literal(Constant("Right"))
+
+          val lRefined = tq"_root_.zio.blocks.schema.binding.StructuralValue { type Tag = $leftTag; def value: $lType }"
+          val rRefined = tq"_root_.zio.blocks.schema.binding.StructuralValue { type Tag = $rightTag; def value: $rType }"
+
+          q"""
+            $expr match {
+              case scala.util.Left(l) =>
+                val sv = new _root_.zio.blocks.schema.binding.StructuralValue(_root_.scala.collection.immutable.Map[String, Any]("value" -> $lbody))
+                scala.util.Left(sv.asInstanceOf[$lRefined])
+              case scala.util.Right(r) =>
+                val sv = new _root_.zio.blocks.schema.binding.StructuralValue(_root_.scala.collection.immutable.Map[String, Any]("value" -> $rbody))
+                scala.util.Right(sv.asInstanceOf[$rRefined])
+            }
+          """
 
         case TypeCategory.TupleType(elements) =>
           // Generate: new StructuralValue(Map("_1" -> tuple._1, "_2" -> tuple._2, ...))
