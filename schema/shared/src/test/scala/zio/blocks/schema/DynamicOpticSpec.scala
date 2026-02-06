@@ -118,6 +118,53 @@ object DynamicOpticSpec extends SchemaBaseSpec {
       assert(DynamicOptic.root.atKey(42).toString)(equalTo("{42}")) &&
       assert(DynamicOptic.root.atKey(123L).toString)(equalTo("{123}")) &&
       assert(DynamicOptic.root.atKey(true).toString)(equalTo("{true}"))
+    },
+    test("toString handles byte, short, float, double primitive keys") {
+      assert(DynamicOptic.root.atKey(42.toByte).toString)(equalTo("{42}")) &&
+      assert(DynamicOptic.root.atKey(123.toShort).toString)(equalTo("{123}")) &&
+      assert(DynamicOptic.root.atKey(2.718).toString)(equalTo("{2.718}"))
+    },
+    test("toString handles other primitive keys via fallback") {
+      assert(DynamicOptic.root.atKey(BigDecimal("123.456")).toString)(equalTo("{BigDecimal(123.456)}")) &&
+      assert(DynamicOptic.root.atKey('A').toString)(equalTo("{'A'}"))
+    },
+    test("search builder creates TypeSearch node") {
+      val optic = DynamicOptic.root.search[X]
+      assert(optic.nodes.length)(equalTo(1)) &&
+      assert(optic.nodes.head.isInstanceOf[DynamicOptic.Node.TypeSearch])(equalTo(true))
+    },
+    test("searchSchema builder creates SchemaSearch node") {
+      val repr  = SchemaRepr.Nominal("Person")
+      val optic = DynamicOptic.root.searchSchema(repr)
+      assert(optic.nodes.length)(equalTo(1)) &&
+      assert(optic.nodes.head)(equalTo(DynamicOptic.Node.SchemaSearch(repr)))
+    },
+    test("toString renders TypeSearch as #TypeName") {
+      assert(DynamicOptic.root.search[X].toString)(equalTo("#X"))
+    },
+    test("toString renders SchemaSearch with schema syntax") {
+      val repr = SchemaRepr.Record(Vector("name" -> SchemaRepr.Primitive("string")))
+      assert(DynamicOptic.root.searchSchema(repr).toString)(equalTo("#record { name: string }"))
+    },
+    test("toString renders SchemaSearch for primitive") {
+      val repr = SchemaRepr.Primitive("string")
+      assert(DynamicOptic.root.searchSchema(repr).toString)(equalTo("#string"))
+    },
+    test("toScalaString renders TypeSearch as .search[TypeName]") {
+      assert(DynamicOptic.root.search[X].toScalaString)(equalTo(".search[X]"))
+    },
+    test("toScalaString renders SchemaSearch with schema repr") {
+      val repr = SchemaRepr.Nominal("Person")
+      assert(DynamicOptic.root.searchSchema(repr).toScalaString)(equalTo(".searchSchema(Person)"))
+    },
+    test("search composes with other optics") {
+      assert(DynamicOptic.root.field("x").search[Y].field("z").toString)(equalTo(".x#Y.z")) &&
+      assert(DynamicOptic.root.field("x").search[Y].field("z").toScalaString)(equalTo(".x.search[Y].z"))
+    },
+    test("searchSchema composes with other optics") {
+      val repr = SchemaRepr.Primitive("int")
+      assert(DynamicOptic.root.elements.searchSchema(repr).toString)(equalTo("[*]#int")) &&
+      assert(DynamicOptic.root.elements.searchSchema(repr).toScalaString)(equalTo(".each.searchSchema(int)"))
     }
   )
 
