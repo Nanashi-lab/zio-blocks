@@ -1192,7 +1192,7 @@ object Traversal {
     new TraversalImpl(Array(map), Array(map.value.asTerm("atKeys")), Array[Any](keys))
   }
 
-  def apply[S, T, A](first: Traversal[S, T], second: Traversal[T, A]): Traversal[S, A] = {
+  def apply[S, T, A](first: Traversal[S, T], second: Traversal[T, A]): Traversal[S, A] =
     // Handle search-based traversal composition specially
     // Note: ComposedSearchTraversal and PrefixedSearchTraversal also extend Traversal but are not TraversalImpl
     (first, second) match {
@@ -1227,9 +1227,8 @@ object Traversal {
           traversal1.params ++ traversal2.params
         )
     }
-  }
 
-  def apply[S, T, A](first: Traversal[S, T], second: Lens[T, A]): Traversal[S, A] = {
+  def apply[S, T, A](first: Traversal[S, T], second: Lens[T, A]): Traversal[S, A] =
     // Handle search-based traversal composition specially
     first match {
       case search: SearchTraversal[S, T] @unchecked =>
@@ -1247,9 +1246,8 @@ object Traversal {
           traversal1.params ++ new Array[Any](lens2.sources.length)
         )
     }
-  }
 
-  def apply[S, T, A <: T](first: Traversal[S, T], second: Prism[T, A]): Traversal[S, A] = {
+  def apply[S, T, A <: T](first: Traversal[S, T], second: Prism[T, A]): Traversal[S, A] =
     // Handle search-based traversal composition specially
     first match {
       case search: SearchTraversal[S, T] @unchecked =>
@@ -1267,9 +1265,8 @@ object Traversal {
           traversal1.params ++ new Array[Any](prism2.sources.length)
         )
     }
-  }
 
-  def apply[S, T, A](first: Traversal[S, T], second: Optional[T, A]): Traversal[S, A] = {
+  def apply[S, T, A](first: Traversal[S, T], second: Optional[T, A]): Traversal[S, A] =
     // Handle search-based traversal composition specially
     first match {
       case search: SearchTraversal[S, T] @unchecked =>
@@ -1287,9 +1284,8 @@ object Traversal {
           traversal1.params ++ optional2.params
         )
     }
-  }
 
-  def apply[S, T, A](first: Lens[S, T], second: Traversal[T, A]): Traversal[S, A] = {
+  def apply[S, T, A](first: Lens[S, T], second: Traversal[T, A]): Traversal[S, A] =
     // Handle search-based traversal composition specially
     second match {
       case search: SearchTraversal[T, A] @unchecked =>
@@ -1307,9 +1303,8 @@ object Traversal {
           new Array[Any](lens1.sources.length) ++ traversal2.params
         )
     }
-  }
 
-  def apply[S, T <: S, A](first: Prism[S, T], second: Traversal[T, A]): Traversal[S, A] = {
+  def apply[S, T <: S, A](first: Prism[S, T], second: Traversal[T, A]): Traversal[S, A] =
     // Handle search-based traversal composition specially
     second match {
       case search: SearchTraversal[T, A] @unchecked =>
@@ -1327,9 +1322,8 @@ object Traversal {
           new Array[Any](prism1.sources.length) ++ traversal2.params
         )
     }
-  }
 
-  def apply[S, T, A](first: Optional[S, T], second: Traversal[T, A]): Traversal[S, A] = {
+  def apply[S, T, A](first: Optional[S, T], second: Traversal[T, A]): Traversal[S, A] =
     // Handle search-based traversal composition specially
     second match {
       case search: SearchTraversal[T, A] @unchecked =>
@@ -1347,7 +1341,6 @@ object Traversal {
           optional1.params ++ traversal2.params
         )
     }
-  }
 
   def listValues[A](reflect: Reflect.Bound[A]): Traversal[List[A], A] = {
     require(reflect ne null)
@@ -2613,11 +2606,14 @@ object Traversal {
   }
 
   /**
-   * A Traversal that searches for all values matching a specific type within a data structure.
-   * Uses runtime value recursion (not precomputed paths) to handle recursive types correctly.
+   * A Traversal that searches for all values matching a specific type within a
+   * data structure. Uses runtime value recursion (not precomputed paths) to
+   * handle recursive types correctly.
    *
-   * @tparam S The source type to search within
-   * @tparam A The focus type to search for
+   * @tparam S
+   *   The source type to search within
+   * @tparam A
+   *   The focus type to search for
    */
   private[schema] case class SearchTraversal[S, A](
     sourceReflect: Reflect.Bound[S],
@@ -2629,8 +2625,8 @@ object Traversal {
     def focus: Reflect.Bound[A] = focusReflect
 
     /**
-     * Folds over all matching values using runtime value recursion.
-     * Converts to DynamicValue, searches for matches, decodes each match, and folds.
+     * Folds over all matching values using runtime value recursion. Converts to
+     * DynamicValue, searches for matches, decodes each match, and folds.
      */
     def fold[Z](s: S)(zero: Z, f: (Z, A) => Z): Z = {
       // Convert source value to DynamicValue for searching
@@ -2674,9 +2670,9 @@ object Traversal {
     }
 
     def modifyOption(s: S, f: A => A): Option[S] = {
-      val dv                    = sourceReflect.toDynamicValue(s)
-      var anyModified: Boolean  = false
-      val modified              = searchModify(
+      val dv                   = sourceReflect.toDynamicValue(s)
+      var anyModified: Boolean = false
+      val modified             = searchModify(
         dv,
         (a: A) => {
           anyModified = true
@@ -2736,11 +2732,11 @@ object Traversal {
     }
 
     /**
-     * Iterative stack-based depth-first traversal to collect all values matching the focus type.
-     * Order is depth-first, left-to-right.
+     * Iterative stack-based depth-first traversal to collect all values
+     * matching the focus type. Order is depth-first, left-to-right.
      */
     private def searchCollect(root: DynamicValue): List[DynamicValue] = {
-      var stack: List[DynamicValue]                       = List(root)
+      var stack: List[DynamicValue]                  = List(root)
       val results: mutable.ArrayBuffer[DynamicValue] = mutable.ArrayBuffer.empty
 
       while (stack.nonEmpty) {
@@ -2772,14 +2768,13 @@ object Traversal {
     }
 
     /**
-     * Check if a DynamicValue matches the focus type structurally.
-     * Uses structural comparison based on the focus Reflect type.
+     * Check if a DynamicValue matches the focus type structurally. Uses
+     * structural comparison based on the focus Reflect type.
      */
-    private def matchesFocusType(dv: DynamicValue): Boolean = {
+    private def matchesFocusType(dv: DynamicValue): Boolean =
       // Try to decode - if it succeeds, the type matches
       // This is a conservative approach that ensures type safety
       focusReflect.fromDynamicValue(dv, Nil).isRight
-    }
 
     /**
      * Recursive modification of all values matching the focus type.
@@ -2826,12 +2821,16 @@ object Traversal {
   }
 
   /**
-   * A Traversal that composes a SearchTraversal with another optic.
-   * First searches for values of type T, then applies the inner optic to each found value.
+   * A Traversal that composes a SearchTraversal with another optic. First
+   * searches for values of type T, then applies the inner optic to each found
+   * value.
    *
-   * @tparam S The source type
-   * @tparam T The intermediate type (what SearchTraversal finds)
-   * @tparam A The final focus type
+   * @tparam S
+   *   The source type
+   * @tparam T
+   *   The intermediate type (what SearchTraversal finds)
+   * @tparam A
+   *   The final focus type
    */
   private[schema] case class ComposedSearchTraversal[S, T, A](
     search: SearchTraversal[S, T],
@@ -2842,7 +2841,7 @@ object Traversal {
 
     def focus: Reflect.Bound[A] = inner.focus
 
-    def fold[Z](s: S)(zero: Z, f: (Z, A) => Z): Z = {
+    def fold[Z](s: S)(zero: Z, f: (Z, A) => Z): Z =
       // First, fold over all T values found by search
       search.fold[Z](s)(
         zero,
@@ -2865,7 +2864,6 @@ object Traversal {
               traversal.fold[Z](t)(acc, f)
           }
       )
-    }
 
     def check(s: S): Option[OpticCheck] = {
       val searchCheck = search.check(s)
@@ -2882,8 +2880,8 @@ object Traversal {
             }
         )
         errors.result() match {
-          case Nil           => None
-          case head :: tail  => Some(new OpticCheck(new ::(head, tail)))
+          case Nil          => None
+          case head :: tail => Some(new OpticCheck(new ::(head, tail)))
         }
       }
     }
@@ -2907,9 +2905,9 @@ object Traversal {
     }
 
     def modifyOrFail(s: S, f: A => A): Either[OpticCheck, S] = {
-      var anyModified                            = false
+      var anyModified                          = false
       var firstError: Either[OpticCheck, Unit] = Right(())
-      val result                                 = search.modify(
+      val result                               = search.modify(
         s,
         t => {
           if (firstError.isLeft) t
@@ -2927,7 +2925,7 @@ object Traversal {
       )
       firstError match {
         case Left(error) => Left(error)
-        case Right(_) =>
+        case Right(_)    =>
           if (anyModified) Right(result)
           else Left(new OpticCheck(new ::(OpticCheck.EmptySequence(toDynamic, toDynamic), Nil)))
       }
@@ -2961,13 +2959,18 @@ object Traversal {
 
   /**
    * A Traversal that composes a regular optic with a search-based traversal.
-   * First applies the prefix optic to get T value(s), then applies the inner traversal to each T.
+   * First applies the prefix optic to get T value(s), then applies the inner
+   * traversal to each T.
    *
-   * This handles composition like: `optic(_.field.searchFor[T])` where the search comes AFTER a lens/prism/optional.
+   * This handles composition like: `optic(_.field.searchFor[T])` where the
+   * search comes AFTER a lens/prism/optional.
    *
-   * @tparam S The source type
-   * @tparam T The intermediate type (what prefix optic focuses on)
-   * @tparam A The final focus type (what the inner traversal finds)
+   * @tparam S
+   *   The source type
+   * @tparam T
+   *   The intermediate type (what prefix optic focuses on)
+   * @tparam A
+   *   The final focus type (what the inner traversal finds)
    */
   private[schema] case class PrefixedSearchTraversal[S, T, A](
     prefix: Optic[S, T],
@@ -2978,7 +2981,7 @@ object Traversal {
 
     def focus: Reflect.Bound[A] = inner.focus
 
-    def fold[Z](s: S)(zero: Z, f: (Z, A) => Z): Z = {
+    def fold[Z](s: S)(zero: Z, f: (Z, A) => Z): Z =
       // Apply prefix to get T value(s), then apply inner traversal to each
       prefix match {
         case lens: Lens[S, T] @unchecked =>
@@ -2997,13 +3000,12 @@ object Traversal {
         case traversal: Traversal[S, T] @unchecked =>
           traversal.fold[Z](s)(zero, (acc, t) => inner.fold[Z](t)(acc, f))
       }
-    }
 
-    def check(s: S): Option[OpticCheck] = {
+    def check(s: S): Option[OpticCheck] =
       // First check prefix
       prefix.check(s) match {
         case Some(prefixError) => Some(prefixError)
-        case None =>
+        case None              =>
           // Then check inner traversal on all T values from prefix
           prefix match {
             case lens: Lens[S, T] @unchecked =>
@@ -3028,9 +3030,8 @@ object Traversal {
               }
           }
       }
-    }
 
-    def modify(s: S, f: A => A): S = {
+    def modify(s: S, f: A => A): S =
       prefix match {
         case lens: Lens[S, T] @unchecked =>
           val t        = lens.get(s)
@@ -3053,9 +3054,8 @@ object Traversal {
         case traversal: Traversal[S, T] @unchecked =>
           traversal.modify(s, (t: T) => inner.modify(t, f))
       }
-    }
 
-    def modifyOption(s: S, f: A => A): Option[S] = {
+    def modifyOption(s: S, f: A => A): Option[S] =
       prefix match {
         case lens: Lens[S, T] @unchecked =>
           val t = lens.get(s)
@@ -3074,7 +3074,7 @@ object Traversal {
           }
         case traversal: Traversal[S, T] @unchecked =>
           var anyModified = false
-          val result = traversal.modify(
+          val result      = traversal.modify(
             s,
             (t: T) => {
               inner.modifyOption(t, f) match {
@@ -3087,9 +3087,8 @@ object Traversal {
           )
           if (anyModified) Some(result) else None
       }
-    }
 
-    def modifyOrFail(s: S, f: A => A): Either[OpticCheck, S] = {
+    def modifyOrFail(s: S, f: A => A): Either[OpticCheck, S] =
       prefix match {
         case lens: Lens[S, T] @unchecked =>
           val t = lens.get(s)
@@ -3111,7 +3110,7 @@ object Traversal {
         case traversal: Traversal[S, T] @unchecked =>
           var anyModified                          = false
           var firstError: Either[OpticCheck, Unit] = Right(())
-          val result = traversal.modify(
+          val result                               = traversal.modify(
             s,
             (t: T) => {
               if (firstError.isLeft) t
@@ -3129,12 +3128,11 @@ object Traversal {
           )
           firstError match {
             case Left(error) => Left(error)
-            case Right(_) =>
+            case Right(_)    =>
               if (anyModified) Right(result)
               else Left(new OpticCheck(new ::(OpticCheck.EmptySequence(toDynamic, toDynamic), Nil)))
           }
       }
-    }
 
     lazy val toDynamic: DynamicOptic = prefix.toDynamic(inner.toDynamic)
 
@@ -3165,11 +3163,15 @@ object Traversal {
 }
 
 object SearchTraversal {
+
   /**
-   * Creates a SearchTraversal that finds all values of type A within a structure of type S.
+   * Creates a SearchTraversal that finds all values of type A within a
+   * structure of type S.
    *
-   * @tparam S The source type to search within
-   * @tparam A The focus type to search for
+   * @tparam S
+   *   The source type to search within
+   * @tparam A
+   *   The focus type to search for
    */
   def apply[S, A](source: Reflect.Bound[S], focus: Reflect.Bound[A]): Traversal[S, A] = {
     require((source ne null) && (focus ne null))
@@ -3179,8 +3181,10 @@ object SearchTraversal {
   /**
    * Creates a SearchTraversal using Schema instances.
    *
-   * @tparam S The source type to search within
-   * @tparam A The focus type to search for
+   * @tparam S
+   *   The source type to search within
+   * @tparam A
+   *   The focus type to search for
    */
   def apply[S, A](implicit sourceSchema: Schema[S], focusSchema: Schema[A]): Traversal[S, A] =
     apply(sourceSchema.reflect, focusSchema.reflect)

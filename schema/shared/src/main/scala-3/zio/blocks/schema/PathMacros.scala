@@ -94,7 +94,9 @@ object PathMacros {
         '{ Node.Wrapped }
 
       case Node.TypeSearch(_) =>
-        quotes.reflect.report.errorAndAbort("TypeSearch is not supported in path interpolators. Use SchemaSearch via #TypeName syntax instead.")
+        quotes.reflect.report.errorAndAbort(
+          "TypeSearch is not supported in path interpolators. Use SchemaSearch via #TypeName syntax instead."
+        )
 
       case Node.SchemaSearch(schemaRepr) =>
         val schemaReprExpr = buildSchemaReprExpr(schemaRepr)
@@ -102,7 +104,7 @@ object PathMacros {
     }
   }
 
-  private def buildSchemaReprExpr(repr: SchemaRepr)(using Quotes): Expr[SchemaRepr] = {
+  private def buildSchemaReprExpr(repr: SchemaRepr)(using Quotes): Expr[SchemaRepr] =
     repr match {
       case SchemaRepr.Nominal(name) =>
         val nameExpr = Expr(name)
@@ -146,7 +148,6 @@ object PathMacros {
       case SchemaRepr.Wildcard =>
         '{ SchemaRepr.Wildcard }
     }
-  }
 
   private def buildDynamicValueExpr(value: DynamicValue)(using Quotes): Expr[DynamicValue] = {
     import quotes.reflect.*
