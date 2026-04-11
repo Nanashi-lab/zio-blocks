@@ -57,15 +57,15 @@ object HxSwap {
   }
 
   object Strategy {
-    case object InnerHTML   extends Strategy { def render: String = "innerHTML" }
-    case object OuterHTML   extends Strategy { def render: String = "outerHTML" }
+    case object InnerHTML   extends Strategy { def render: String = "innerHTML"   }
+    case object OuterHTML   extends Strategy { def render: String = "outerHTML"   }
     case object TextContent extends Strategy { def render: String = "textContent" }
     case object BeforeBegin extends Strategy { def render: String = "beforebegin" }
-    case object AfterBegin  extends Strategy { def render: String = "afterbegin" }
-    case object BeforeEnd   extends Strategy { def render: String = "beforeend" }
-    case object AfterEnd    extends Strategy { def render: String = "afterend" }
-    case object Delete      extends Strategy { def render: String = "delete" }
-    case object None_       extends Strategy { def render: String = "none" }
+    case object AfterBegin  extends Strategy { def render: String = "afterbegin"  }
+    case object BeforeEnd   extends Strategy { def render: String = "beforeend"   }
+    case object AfterEnd    extends Strategy { def render: String = "afterend"    }
+    case object Delete      extends Strategy { def render: String = "delete"      }
+    case object None_       extends Strategy { def render: String = "none"        }
   }
 
   final case class Modifiers(
@@ -164,15 +164,15 @@ object HxSwap {
     def render: String = s"${swap.render}:$selector"
   }
 
-  val InnerHTML: HxSwap = HxSwap(Strategy.InnerHTML)
-  val OuterHTML: HxSwap = HxSwap(Strategy.OuterHTML)
+  val InnerHTML: HxSwap   = HxSwap(Strategy.InnerHTML)
+  val OuterHTML: HxSwap   = HxSwap(Strategy.OuterHTML)
   val TextContent: HxSwap = HxSwap(Strategy.TextContent)
   val BeforeBegin: HxSwap = HxSwap(Strategy.BeforeBegin)
-  val AfterBegin: HxSwap = HxSwap(Strategy.AfterBegin)
-  val BeforeEnd: HxSwap = HxSwap(Strategy.BeforeEnd)
-  val AfterEnd: HxSwap = HxSwap(Strategy.AfterEnd)
-  val Delete: HxSwap = HxSwap(Strategy.Delete)
-  val None: HxSwap = HxSwap(Strategy.None_)
+  val AfterBegin: HxSwap  = HxSwap(Strategy.AfterBegin)
+  val BeforeEnd: HxSwap   = HxSwap(Strategy.BeforeEnd)
+  val AfterEnd: HxSwap    = HxSwap(Strategy.AfterEnd)
+  val Delete: HxSwap      = HxSwap(Strategy.Delete)
+  val None: HxSwap        = HxSwap(Strategy.None_)
 
   private[htmx] def renderBoolean(value: Boolean): String =
     if (value) "true" else "false"

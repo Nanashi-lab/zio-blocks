@@ -32,13 +32,17 @@ object HxTargetSpec extends ZIOSpecDefault {
       assertTrue(input(hxInclude := HxTarget.find("input")).render == """<input hx-include="find input"/>""")
     },
     test("hx-disabled-elt accepts extended selectors") {
-      assertTrue(input(hxDisabledElt := HxTarget.previous(".field")).render == """<input hx-disabled-elt="previous .field"/>""")
+      assertTrue(
+        input(hxDisabledElt := HxTarget.previous(".field")).render == """<input hx-disabled-elt="previous .field"/>"""
+      )
     },
     test("hx-select accepts CSS selectors") {
       assertTrue(input(hxSelect := CssSelector.`class`("result")).render == """<input hx-select=".result"/>""")
     },
     test("hx-select-oob accepts CSS selectors") {
-      assertTrue(input(hxSelectOob := CssSelector.raw("#main, .flash")).render == """<input hx-select-oob="#main, .flash"/>""")
+      assertTrue(
+        input(hxSelectOob := CssSelector.raw("#main, .flash")).render == """<input hx-select-oob="#main, .flash"/>"""
+      )
     }
   )
 }

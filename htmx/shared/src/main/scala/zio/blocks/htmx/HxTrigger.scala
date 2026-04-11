@@ -162,16 +162,16 @@ object HxTrigger {
   def every(duration: Duration): HxTrigger =
     HxTrigger(Event.Every(duration))
 
-  val click: HxTrigger = HxTrigger("click")
-  val load: HxTrigger = HxTrigger("load")
-  val revealed: HxTrigger = HxTrigger("revealed")
+  val click: HxTrigger     = HxTrigger("click")
+  val load: HxTrigger      = HxTrigger("load")
+  val revealed: HxTrigger  = HxTrigger("revealed")
   val intersect: HxTrigger = HxTrigger("intersect")
-  val submit: HxTrigger = HxTrigger("submit")
-  val input: HxTrigger = HxTrigger("input")
-  val change: HxTrigger = HxTrigger("change")
+  val submit: HxTrigger    = HxTrigger("submit")
+  val input: HxTrigger     = HxTrigger("input")
+  val change: HxTrigger    = HxTrigger("change")
 
   val document: Source = Source.Document
-  val window: Source = Source.Window
+  val window: Source   = Source.Window
 
   private[htmx] def renderSelector(selector: String): String =
     if (selector.exists(_.isWhitespace)) s"($selector)" else selector

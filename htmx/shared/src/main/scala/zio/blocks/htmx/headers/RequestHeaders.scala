@@ -130,6 +130,6 @@ private[headers] object HtmxHeaderSupport {
     value.trim.toLowerCase match {
       case "true"  => Right(true)
       case "false" => Right(false)
-      case other    => Left(s"Invalid $headerName header: $other")
+      case other   => Left(s"Invalid $headerName header: $other")
     }
 }

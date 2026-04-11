@@ -67,7 +67,9 @@ object HtmxAdvancedAttributeSpec extends ZIOSpecDefault {
       assertTrue(
         input(hxInclude := HxSelectorList.inherit(HxTarget.find("input"), HxTarget.css("[name='email']"))).render ==
           """<input hx-include="inherit, find input, [name=&#x27;email&#x27;]"/>""",
-        input(hxDisabledElt := HxSelectorList.inherit(HxTarget.find("input[type='text']"), HxTarget.find("button"))).render ==
+        input(
+          hxDisabledElt := HxSelectorList.inherit(HxTarget.find("input[type='text']"), HxTarget.find("button"))
+        ).render ==
           """<input hx-disabled-elt="inherit, find input[type=&#x27;text&#x27;], find button"/>"""
       )
     },

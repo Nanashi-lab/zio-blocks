@@ -11,14 +11,14 @@ object HtmxHeaderSpec extends ZIOSpecDefault {
     suite("request headers")(
       test("parse typed request headers via Headers.get") {
         val headers = Headers(
-          HXRequest.name -> "true",
-          HXBoosted.name -> "false",
-          HXCurrentURL.name -> "/items?page=2",
-          HXTarget.name -> "results",
-          HXTriggerId.name -> "search-input",
-          HXTriggerName.name -> "q",
+          HXRequest.name               -> "true",
+          HXBoosted.name               -> "false",
+          HXCurrentURL.name            -> "/items?page=2",
+          HXTarget.name                -> "results",
+          HXTriggerId.name             -> "search-input",
+          HXTriggerName.name           -> "q",
           HXHistoryRestoreRequest.name -> "true",
-          HXPrompt.name -> "Really?"
+          HXPrompt.name                -> "Really?"
         )
 
         assertTrue(
@@ -60,7 +60,7 @@ object HtmxHeaderSpec extends ZIOSpecDefault {
     suite("response headers")(
       test("render and parse url-or-false response headers") {
         val nextPage = URL.fromPath(Path.root / "items") ?? ("page", "2")
-        val headers = Headers.empty
+        val headers  = Headers.empty
           .add(HXPushUrl.name, HXPushUrl.render(HXPushUrl(HXUrlValue.url(nextPage))))
           .set(HXReplaceUrl.name, HXReplaceUrl.render(HXReplaceUrl(HXUrlValue.False)))
 
@@ -78,10 +78,10 @@ object HtmxHeaderSpec extends ZIOSpecDefault {
       },
       test("render and parse redirect, refresh, reswap, retarget, and reselect") {
         val redirect = HXRedirect(URL.root.host("example.com").relative / "login")
-        val headers = Headers(
+        val headers  = Headers(
           HXRedirect.name -> HXRedirect.render(redirect),
-          HXRefresh.name -> HXRefresh.render(HXRefresh()),
-          HXReswap.name -> HXReswap.render(HXReswap(HxSwap.AfterEnd)),
+          HXRefresh.name  -> HXRefresh.render(HXRefresh()),
+          HXReswap.name   -> HXReswap.render(HXReswap(HxSwap.AfterEnd)),
           HXRetarget.name -> "#panel",
           HXReselect.name -> ".item"
         )
@@ -134,7 +134,7 @@ object HtmxHeaderSpec extends ZIOSpecDefault {
             "showMessage",
             "#toast",
             "message" -> HXJsonValue.from("Saved"),
-            "level" -> HXJsonValue.from("info")
+            "level"   -> HXJsonValue.from("info")
           )
         )
         val rendered = zio.blocks.htmx.headers.HXTrigger.render(triggered)

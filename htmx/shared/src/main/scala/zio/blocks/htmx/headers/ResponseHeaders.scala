@@ -24,7 +24,7 @@ object HXUrlValue {
   def parse(headerName: String, value: String): Either[String, HXUrlValue] =
     value.trim match {
       case "false" => Right(False)
-      case other    => URL.parse(other).map(Url(_)).left.map(error => s"Invalid $headerName header: $error")
+      case other   => URL.parse(other).map(Url(_)).left.map(error => s"Invalid $headerName header: $error")
     }
 
   def url(url: URL): HXUrlValue = Url(url)
@@ -72,7 +72,9 @@ object HXLocation extends Header.Typed[HXLocation] {
         source <- HtmxResponseHeaderJson.optionalString(name, jsonObject, "source")
         event  <- HtmxResponseHeaderJson.optionalString(name, jsonObject, "event")
         target <- HtmxResponseHeaderJson.optionalString(name, jsonObject, "target")
-        swap   <- HtmxResponseHeaderJson.optionalString(name, jsonObject, "swap").flatMap(HtmxResponseHeaderSupport.parseOptionalSwap(name, _))
+        swap   <- HtmxResponseHeaderJson
+                  .optionalString(name, jsonObject, "swap")
+                  .flatMap(HtmxResponseHeaderSupport.parseOptionalSwap(name, _))
         select <- HtmxResponseHeaderJson.optionalString(name, jsonObject, "select")
       } yield HXLocation(path, source, event, target, swap, select)
     }
@@ -219,9 +221,11 @@ object HXTriggerValue {
 
     final case class Targeted(name: String, target: String, fields: ListMap[String, HXJsonValue]) extends Event {
       def renderField: String = {
-        val renderedFields = (List(HtmxResponseHeaderSupport.jsonField("target", ToJs[String].toJs(target))) ++ fields.map { case (key, value) =>
-          HtmxResponseHeaderSupport.jsonField(key, value.render)
-        }).mkString("{", ",", "}")
+        val renderedFields =
+          (List(HtmxResponseHeaderSupport.jsonField("target", ToJs[String].toJs(target))) ++ fields.map {
+            case (key, value) =>
+              HtmxResponseHeaderSupport.jsonField(key, value.render)
+          }).mkString("{", ",", "}")
 
         HtmxResponseHeaderSupport.jsonField(name, renderedFields)
       }
@@ -247,9 +251,9 @@ object HXTriggerValue {
     else {
       val parts = trimmed.split(",").iterator.map(_.trim).filter(_.nonEmpty).toList
       parts match {
-        case Nil          => Left(s"Invalid $headerName header: empty trigger value")
-        case name :: Nil  => Right(Names(Chunk(name)))
-        case many         => Right(Names(Chunk.from(many)))
+        case Nil         => Left(s"Invalid $headerName header: empty trigger value")
+        case name :: Nil => Right(Names(Chunk(name)))
+        case many        => Right(Names(Chunk.from(many)))
       }
     }
   }
@@ -269,10 +273,10 @@ object HXTriggerValue {
                     case (key, value) if key != "target" => key -> HXJsonValue.json(value.print)
                   }.toSeq: _*)
                 )
-              case _                        =>
+              case _ =>
                 Event.Detail(eventName, HXJsonValue.json(jsonValue.print))
             }
-          case _                   =>
+          case _ =>
             Event.Detail(eventName, HXJsonValue.json(jsonValue.print))
         }
       }
@@ -342,9 +346,9 @@ private[headers] object HtmxResponseHeaderJson {
   def optionalString(headerName: String, value: Json.Object, key: String): Either[String, Option[String]] = {
     val fields = ListMap(value.value.toList: _*)
     fields.get(key) match {
-      case None                     => Right(None)
-      case Some(Json.String(text))  => Right(Some(text))
-      case Some(other)              => Left(s"Invalid $headerName header: '$key' must be a string, got ${other.jsonType}")
+      case None                    => Right(None)
+      case Some(Json.String(text)) => Right(Some(text))
+      case Some(other)             => Left(s"Invalid $headerName header: '$key' must be a string, got ${other.jsonType}")
     }
   }
 }
@@ -370,6 +374,6 @@ private[headers] object HtmxResponseHeaderSupport {
       case "afterend"    => Right(HxSwap.AfterEnd)
       case "delete"      => Right(HxSwap.Delete)
       case "none"        => Right(HxSwap.None)
-      case other          => Left(s"Invalid $headerName header: unknown swap strategy '$other'")
+      case other         => Left(s"Invalid $headerName header: unknown swap strategy '$other'")
     }
 }

@@ -15,14 +15,16 @@ object HtmxMethodSpec extends ZIOSpecDefault {
       assertTrue(input(hxPost := url).render == """<input hx-post="/search"/>""")
     },
     test("hx-put renders absolute URL values") {
-      val url = URL.fromPath(Path.root / "search")
+      val url = URL
+        .fromPath(Path.root / "search")
         .scheme(Scheme.HTTPS)
         .host("api.example.com")
 
       assertTrue(input(hxPut := url).render == """<input hx-put="https://api.example.com/search"/>""")
     },
     test("hx-patch renders encoded query params") {
-      val url = URL.fromPath(Path.root / "search")
+      val url = URL
+        .fromPath(Path.root / "search")
         .addQueryParams(QueryParams("q" -> "zio blocks", "page" -> "2"))
 
       assertTrue(input(hxPatch := url).render == """<input hx-patch="/search?q=zio%20blocks&amp;page=2"/>""")
