@@ -5,6 +5,8 @@ title: "HTTP Model"
 
 `zio-http-model` is a **pure, zero-dependency HTTP data model** for building HTTP clients and servers. It provides immutable types representing requests, responses, headers, URLs, paths, query parameters, and all HTTP primitives.
 
+If you want typed HTMX request and response headers built on top of this model, see [HTMX](./htmx.md).
+
 The module is designed as a pure data layer:
 
 - **Zero effects**: no streaming, no I/O, no mutable state (except monotonic lazy-parse caches in `Headers`)
