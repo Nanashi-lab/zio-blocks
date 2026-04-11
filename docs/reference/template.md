@@ -26,6 +26,8 @@ val html = Template.parse("<div>{{content}}</div>")
 
 Template provides type-safe HTML construction with automatic XSS protection and Scala 3 compile-time optimizations for string interpolators.
 
+If you want typed HTMX attributes and HTMX-specific headers on top of this HTML DSL, see [HTMX](./htmx.md).
+
 ## Installation
 
 Add the following to your `build.sbt`:

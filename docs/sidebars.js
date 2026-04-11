@@ -63,9 +63,10 @@ const sidebars = {
          "reference/syntax",
          "reference/media-type",
          "reference/http-model",
+         "reference/htmx",
          "ringbuffer",
          "reference/template",
-      ]
+       ]
     },
     {
       type: "category",
