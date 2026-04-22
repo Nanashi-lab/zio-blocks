@@ -16,11 +16,33 @@
 
 package zio.blocks.schema.bson
 
-import org.bson.{BsonReader, BsonWriter, BsonValue}
+import org.bson.{
+  BsonArray,
+  BsonBoolean,
+  BsonDocument,
+  BsonDouble,
+  BsonInt32,
+  BsonInt64,
+  BsonNull,
+  BsonReader,
+  BsonString,
+  BsonType,
+  BsonValue,
+  BsonWriter
+}
 import zio.blocks.schema._
 import zio.blocks.schema.binding.{Register, RegisterOffset, Registers}
+import zio.blocks.schema.json.Json
+import zio.blocks.typeid.TypeId
 
 object BsonSchemaCodec {
+
+  private[this] val DynamicVariantField      = "$zio_dynamic_variant"
+  private[this] val DynamicVariantCaseField  = "case"
+  private[this] val DynamicVariantValueField = "value"
+  private[this] val DynamicMapField          = "$zio_dynamic_map"
+  private[this] val DynamicMapKeyField       = "key"
+  private[this] val DynamicMapValueField     = "value"
 
   type TermMapping = String => String
 
@@ -157,28 +179,339 @@ object BsonSchemaCodec {
       }
     } else {
       // Non-deferred types
-      reflect.asPrimitive match {
-        case Some(primitive) =>
-          Codecs.primitiveCodec(primitive.primitiveType)
-        case None =>
-          if (reflect.isRecord) {
-            deriveRecordCodec(reflect.asRecord.get, config)
-          } else if (reflect.isSequence) {
-            val seq = reflect.asSequenceUnknown.get
-            deriveSequenceCodec(seq.sequence, config).asInstanceOf[BsonCodec[A]]
-          } else if (reflect.isMap) {
-            val m = reflect.asMapUnknown.get
-            deriveMapCodec(m.map, config).asInstanceOf[BsonCodec[A]]
-          } else if (reflect.isVariant) {
-            deriveVariantCodec(reflect.asVariant.get, config)
-          } else if (reflect.isWrapper) {
-            val w = reflect.asWrapperUnknown.get
-            deriveWrapperCodec(w.wrapper, config).asInstanceOf[BsonCodec[A]]
-          } else {
-            throw new UnsupportedOperationException(
-              s"BSON codec for ${reflect.typeId.fullName} (type: ${reflect.nodeType}) is not yet implemented."
+      if (reflect.typeId == TypeId.of[Json]) {
+        deriveJsonCodec(reflect)
+      } else
+        reflect.asPrimitive match {
+          case Some(primitive) =>
+            Codecs.primitiveCodec(primitive.primitiveType)
+          case None =>
+            if (reflect.nodeType == Reflect.Type.Dynamic) {
+              deriveDynamicCodec.asInstanceOf[BsonCodec[A]]
+            } else if (reflect.isRecord) {
+              deriveRecordCodec(reflect.asRecord.get, config)
+            } else if (reflect.isSequence) {
+              val seq = reflect.asSequenceUnknown.get
+              deriveSequenceCodec(seq.sequence, config).asInstanceOf[BsonCodec[A]]
+            } else if (reflect.isMap) {
+              val m = reflect.asMapUnknown.get
+              deriveMapCodec(m.map, config).asInstanceOf[BsonCodec[A]]
+            } else if (reflect.isVariant) {
+              deriveVariantCodec(reflect.asVariant.get, config)
+            } else if (reflect.isWrapper) {
+              val w = reflect.asWrapperUnknown.get
+              deriveWrapperCodec(w.wrapper, config).asInstanceOf[BsonCodec[A]]
+            } else {
+              throw new UnsupportedOperationException(
+                s"BSON codec for ${reflect.typeId.fullName} (type: ${reflect.nodeType}) is not yet implemented."
+              )
+            }
+        }
+    }
+
+  private def deriveJsonCodec[A](reflect: Reflect.Bound[A]): BsonCodec[A] = {
+    val codec: BsonCodec[Json] = reflect.asWrapperUnknown match {
+      case Some(wrapperUnknown) =>
+        val wrapper = wrapperUnknown.wrapper.asInstanceOf[Reflect.Wrapper.Bound[Json, DynamicValue]]
+        val binding = wrapper.binding.asInstanceOf[zio.blocks.schema.binding.Binding.Wrapper[Json, DynamicValue]]
+
+        deriveSemanticJsonCodec(
+          unwrap = binding.unwrap,
+          wrap = value =>
+            try Right(binding.wrap(value))
+            catch {
+              case error: SchemaError => Left(error.message)
+            }
+        )
+
+      case None =>
+        deriveSemanticJsonCodec(_.toDynamicValue, value => Right(Json.fromDynamicValue(value)))
+    }
+
+    codec.asInstanceOf[BsonCodec[A]]
+  }
+
+  private def deriveSemanticJsonCodec(
+    unwrap: Json => DynamicValue,
+    wrap: DynamicValue => Either[String, Json]
+  ): BsonCodec[Json] = {
+    val encoder = new BsonEncoder[Json] {
+      def encode(writer: BsonWriter, value: Json, ctx: BsonEncoder.EncoderContext): Unit =
+        BsonEncoder.bsonValueEncoder.encode(
+          writer,
+          dynamicToBsonValue(unwrap(value), preserveDynamicTypes = false),
+          ctx
+        )
+
+      def toBsonValue(value: Json): BsonValue =
+        dynamicToBsonValue(unwrap(value), preserveDynamicTypes = false)
+    }
+
+    val decoder = new BsonDecoder[Json] {
+      def decodeUnsafe(reader: BsonReader, trace: List[BsonTrace], ctx: BsonDecoder.BsonDecoderContext): Json =
+        wrapJson(bsonReaderToDynamicValue(reader, trace, preserveDynamicTypes = false), trace, wrap)
+
+      def fromBsonValueUnsafe(value: BsonValue, trace: List[BsonTrace], ctx: BsonDecoder.BsonDecoderContext): Json =
+        wrapJson(bsonValueToDynamicValue(value, trace, preserveDynamicTypes = false), trace, wrap)
+    }
+
+    BsonCodec(encoder, decoder)
+  }
+
+  private def deriveDynamicCodec: BsonCodec[DynamicValue] = {
+    val encoder = new BsonEncoder[DynamicValue] {
+      def encode(writer: BsonWriter, value: DynamicValue, ctx: BsonEncoder.EncoderContext): Unit =
+        BsonEncoder.bsonValueEncoder.encode(writer, dynamicToBsonValue(value, preserveDynamicTypes = true), ctx)
+
+      def toBsonValue(value: DynamicValue): BsonValue =
+        dynamicToBsonValue(value, preserveDynamicTypes = true)
+    }
+
+    val decoder = new BsonDecoder[DynamicValue] {
+      def decodeUnsafe(reader: BsonReader, trace: List[BsonTrace], ctx: BsonDecoder.BsonDecoderContext): DynamicValue =
+        bsonReaderToDynamicValue(reader, trace, preserveDynamicTypes = true)
+
+      def fromBsonValueUnsafe(
+        value: BsonValue,
+        trace: List[BsonTrace],
+        ctx: BsonDecoder.BsonDecoderContext
+      ): DynamicValue =
+        bsonValueToDynamicValue(value, trace, preserveDynamicTypes = true)
+    }
+
+    BsonCodec(encoder, decoder)
+  }
+
+  private def wrapJson(
+    value: DynamicValue,
+    trace: List[BsonTrace],
+    wrap: DynamicValue => Either[String, Json]
+  ): Json =
+    wrap(value) match {
+      case Right(json) => json
+      case Left(error) => throw BsonDecoder.Error(trace, error)
+    }
+
+  private def bsonReaderToDynamicValue(
+    reader: BsonReader,
+    trace: List[BsonTrace],
+    preserveDynamicTypes: Boolean
+  ): DynamicValue = {
+    val codec = new org.bson.codecs.BsonValueCodec()
+    val value = codec.decode(reader, org.bson.codecs.DecoderContext.builder().build())
+    bsonValueToDynamicValue(value, trace, preserveDynamicTypes)
+  }
+
+  private def dynamicToBsonValue(value: DynamicValue, preserveDynamicTypes: Boolean): BsonValue = value match {
+    case primitive: DynamicValue.Primitive                     => primitiveToBsonValue(primitive.value)
+    case record: DynamicValue.Record                           => recordToBsonValue(record, preserveDynamicTypes)
+    case sequence: DynamicValue.Sequence                       => sequenceToBsonValue(sequence, preserveDynamicTypes)
+    case variant: DynamicValue.Variant if preserveDynamicTypes => variantToBsonValue(variant, preserveDynamicTypes)
+    case _: DynamicValue.Variant                               =>
+      throw new UnsupportedOperationException("Semantic BSON encoding for DynamicValue.Variant is not supported.")
+    case map: DynamicValue.Map if preserveDynamicTypes => mapToBsonValue(map, preserveDynamicTypes)
+    case _: DynamicValue.Map                           =>
+      throw new UnsupportedOperationException("Semantic BSON encoding for DynamicValue.Map is not supported.")
+    case DynamicValue.Null => BsonNull.VALUE
+  }
+
+  private def primitiveToBsonValue(value: PrimitiveValue): BsonValue = value match {
+    case v: PrimitiveValue.Boolean    => BsonBoolean.valueOf(v.value)
+    case v: PrimitiveValue.Int        => new BsonInt32(v.value)
+    case v: PrimitiveValue.Long       => new BsonInt64(v.value)
+    case v: PrimitiveValue.Double     => new BsonDouble(v.value)
+    case v: PrimitiveValue.String     => new BsonString(v.value)
+    case v: PrimitiveValue.BigDecimal => Codecs.bigDecimalCodec.encoder.toBsonValue(v.value)
+    case v: PrimitiveValue.Instant    => BsonCodec.instant.encoder.toBsonValue(v.value)
+    case v: PrimitiveValue.UUID       => BsonCodec.uuid.encoder.toBsonValue(v.value)
+    case primitive                    =>
+      throw new UnsupportedOperationException(
+        s"BSON codec for DynamicValue primitive ${primitive.getClass.getSimpleName} is not yet implemented."
+      )
+  }
+
+  private def recordToBsonValue(record: DynamicValue.Record, preserveDynamicTypes: Boolean): BsonDocument = {
+    val doc = new BsonDocument()
+    record.fields.foreach { case (name, value) =>
+      doc.put(name, dynamicToBsonValue(value, preserveDynamicTypes))
+    }
+    doc
+  }
+
+  private def sequenceToBsonValue(sequence: DynamicValue.Sequence, preserveDynamicTypes: Boolean): BsonArray = {
+    val array = new BsonArray()
+    sequence.elements.foreach { value =>
+      array.add(dynamicToBsonValue(value, preserveDynamicTypes))
+    }
+    array
+  }
+
+  private def variantToBsonValue(variant: DynamicValue.Variant, preserveDynamicTypes: Boolean): BsonDocument = {
+    val payload = new BsonDocument()
+    payload.put(DynamicVariantCaseField, new BsonString(variant.caseNameValue))
+    payload.put(DynamicVariantValueField, dynamicToBsonValue(variant.value, preserveDynamicTypes))
+
+    val doc = new BsonDocument()
+    doc.put(DynamicVariantField, payload)
+    doc
+  }
+
+  private def mapToBsonValue(map: DynamicValue.Map, preserveDynamicTypes: Boolean): BsonDocument = {
+    val entries = new BsonArray()
+    map.entries.foreach { case (key, value) =>
+      val entry = new BsonDocument()
+      entry.put(DynamicMapKeyField, dynamicToBsonValue(key, preserveDynamicTypes))
+      entry.put(DynamicMapValueField, dynamicToBsonValue(value, preserveDynamicTypes))
+      entries.add(entry)
+    }
+
+    val doc = new BsonDocument()
+    doc.put(DynamicMapField, entries)
+    doc
+  }
+
+  private def bsonValueToDynamicValue(
+    value: BsonValue,
+    trace: List[BsonTrace],
+    preserveDynamicTypes: Boolean
+  ): DynamicValue =
+    value.getBsonType match {
+      case BsonType.DOCUMENT =>
+        val doc = value.asDocument()
+        if (preserveDynamicTypes) {
+          decodeDynamicVariant(doc, trace)
+            .orElse(decodeDynamicMap(doc, trace))
+            .getOrElse(documentToDynamicValue(doc, trace, preserveDynamicTypes))
+        } else {
+          documentToDynamicValue(doc, trace, preserveDynamicTypes)
+        }
+      case BsonType.ARRAY      => arrayToDynamicValue(value.asArray(), trace, preserveDynamicTypes)
+      case BsonType.STRING     => DynamicValue.string(value.asString().getValue)
+      case BsonType.BOOLEAN    => DynamicValue.boolean(value.asBoolean().getValue)
+      case BsonType.INT32      => DynamicValue.int(value.asInt32().getValue)
+      case BsonType.INT64      => DynamicValue.long(value.asInt64().getValue)
+      case BsonType.DOUBLE     => DynamicValue.double(value.asDouble().getValue)
+      case BsonType.DECIMAL128 =>
+        DynamicValue.bigDecimal(
+          Codecs.bigDecimalCodec.decoder.fromBsonValueUnsafe(value, trace, BsonDecoder.BsonDecoderContext.default)
+        )
+      case BsonType.DATE_TIME =>
+        new DynamicValue.Primitive(
+          new PrimitiveValue.Instant(
+            BsonCodec.instant.decoder.fromBsonValueUnsafe(value, trace, BsonDecoder.BsonDecoderContext.default)
+          )
+        )
+      case BsonType.BINARY =>
+        new DynamicValue.Primitive(
+          new PrimitiveValue.UUID(
+            BsonCodec.uuid.decoder.fromBsonValueUnsafe(value, trace, BsonDecoder.BsonDecoderContext.default)
+          )
+        )
+      case BsonType.NULL => DynamicValue.Null
+      case _             => throw BsonDecoder.Error(trace, s"Unsupported BSON type ${value.getBsonType} for DynamicValue")
+    }
+
+  private def documentToDynamicValue(
+    doc: BsonDocument,
+    trace: List[BsonTrace],
+    preserveDynamicTypes: Boolean
+  ): DynamicValue = {
+    val fields = scala.collection.mutable.ArrayBuffer.empty[(String, DynamicValue)]
+    val iter   = doc.entrySet().iterator()
+
+    while (iter.hasNext()) {
+      val entry      = iter.next()
+      val fieldTrace = BsonTrace.Field(entry.getKey()) :: trace
+      fields += ((entry.getKey(), bsonValueToDynamicValue(entry.getValue(), fieldTrace, preserveDynamicTypes)))
+    }
+
+    new DynamicValue.Record(zio.blocks.chunk.Chunk.from(fields))
+  }
+
+  private def arrayToDynamicValue(
+    array: BsonArray,
+    trace: List[BsonTrace],
+    preserveDynamicTypes: Boolean
+  ): DynamicValue = {
+    val elements = scala.collection.mutable.ArrayBuffer.empty[DynamicValue]
+    val iter     = array.iterator()
+    var idx      = 0
+
+    while (iter.hasNext()) {
+      val element = iter.next()
+      elements += bsonValueToDynamicValue(element, BsonTrace.Array(idx) :: trace, preserveDynamicTypes)
+      idx += 1
+    }
+
+    new DynamicValue.Sequence(zio.blocks.chunk.Chunk.from(elements))
+  }
+
+  private def decodeDynamicVariant(doc: BsonDocument, trace: List[BsonTrace]): Option[DynamicValue] =
+    if (doc.size() != 1) None
+    else {
+      val wrapper = doc.get(DynamicVariantField)
+      if (wrapper == null || !wrapper.isDocument()) None
+      else {
+        val payload   = wrapper.asDocument()
+        val caseName  = payload.get(DynamicVariantCaseField)
+        val caseValue = payload.get(DynamicVariantValueField)
+
+        if (caseName == null || !caseName.isString() || caseValue == null) None
+        else
+          Some(
+            new DynamicValue.Variant(
+              caseName.asString().getValue,
+              bsonValueToDynamicValue(
+                caseValue,
+                BsonTrace.Field(DynamicVariantValueField) :: BsonTrace.Field(DynamicVariantField) :: trace,
+                preserveDynamicTypes = true
+              )
             )
+          )
+      }
+    }
+
+  private def decodeDynamicMap(doc: BsonDocument, trace: List[BsonTrace]): Option[DynamicValue] =
+    if (doc.size() != 1) None
+    else {
+      val wrapper = doc.get(DynamicMapField)
+      if (wrapper == null || !wrapper.isArray()) None
+      else {
+        val entries = scala.collection.mutable.ArrayBuffer.empty[(DynamicValue, DynamicValue)]
+        val iter    = wrapper.asArray().iterator()
+        var idx     = 0
+
+        while (iter.hasNext()) {
+          val value      = iter.next()
+          val entryTrace = BsonTrace.Array(idx) :: BsonTrace.Field(DynamicMapField) :: trace
+          if (!value.isDocument()) {
+            throw BsonDecoder.Error(entryTrace, s"Expected DOCUMENT but got ${value.getBsonType}")
           }
+
+          val entryDoc   = value.asDocument()
+          val encodedKey = entryDoc.get(DynamicMapKeyField)
+          val encodedVal = entryDoc.get(DynamicMapValueField)
+
+          if (encodedKey == null || encodedVal == null) {
+            throw BsonDecoder.Error(entryTrace, "Invalid dynamic map entry.")
+          }
+
+          entries += ((
+            bsonValueToDynamicValue(
+              encodedKey,
+              BsonTrace.Field(DynamicMapKeyField) :: entryTrace,
+              preserveDynamicTypes = true
+            ),
+            bsonValueToDynamicValue(
+              encodedVal,
+              BsonTrace.Field(DynamicMapValueField) :: entryTrace,
+              preserveDynamicTypes = true
+            )
+          ))
+          idx += 1
+        }
+
+        Some(new DynamicValue.Map(zio.blocks.chunk.Chunk.from(entries)))
       }
     }
 
