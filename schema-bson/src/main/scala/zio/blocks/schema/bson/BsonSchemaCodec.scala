@@ -397,16 +397,13 @@ object BsonSchemaCodec {
         )
       case BsonType.DATE_TIME =>
         new DynamicValue.Primitive(
-          new PrimitiveValue.Instant(
-            BsonCodec.instant.decoder.fromBsonValueUnsafe(value, trace, BsonDecoder.BsonDecoderContext.default)
-          )
+          new PrimitiveValue.Instant(java.time.Instant.ofEpochMilli(value.asDateTime().getValue))
         )
       case BsonType.BINARY =>
-        new DynamicValue.Primitive(
-          new PrimitiveValue.UUID(
-            BsonCodec.uuid.decoder.fromBsonValueUnsafe(value, trace, BsonDecoder.BsonDecoderContext.default)
-          )
-        )
+        try new DynamicValue.Primitive(new PrimitiveValue.UUID(value.asBinary().asUuid()))
+        catch {
+          case _: IllegalArgumentException => throw BsonDecoder.Error(trace, "Expected UUID binary value")
+        }
       case BsonType.NULL => DynamicValue.Null
       case _             => throw BsonDecoder.Error(trace, s"Unsupported BSON type ${value.getBsonType} for DynamicValue")
     }
