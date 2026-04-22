@@ -22,6 +22,9 @@ import zio.blocks.schema._
 import zio.blocks.schema.json.{Json, JsonSchema}
 import zio.test._
 
+import java.time.Instant
+import java.util.UUID
+
 object BsonCodecJsonDynamicSpec extends SchemaBaseSpec {
 
   final case class Scope(name: String, description: String, payload: Json)
@@ -126,6 +129,75 @@ object BsonCodecJsonDynamicSpec extends SchemaBaseSpec {
           items.get(2).isNull,
           decoded == value
         )
+      },
+      test("variant values round-trip through the dedicated dynamic wrapper") {
+        val codec = BsonSchemaCodec.bsonCodec(Schema[DynamicValue])
+        val value = DynamicValue.Variant(
+          "Wrapped",
+          DynamicValue.Record("n" -> DynamicValue.int(1), "ok" -> DynamicValue.boolean(true))
+        )
+
+        val encoded = codec.encoder.toBsonValue(value).asDocument()
+        val wrapper = encoded.getDocument("$zio_dynamic_variant")
+        val payload = wrapper.getDocument("value")
+        val decoded = codec.decoder.fromBsonValueUnsafe(encoded, Nil, BsonDecoder.BsonDecoderContext.default)
+
+        assertTrue(
+          wrapper.getString("case").getValue() == "Wrapped",
+          payload.getInt32("n").getValue() == 1,
+          payload.getBoolean("ok").getValue(),
+          decoded == value
+        )
+      },
+      test("map values round-trip through the dedicated dynamic wrapper") {
+        val codec = BsonSchemaCodec.bsonCodec(Schema[DynamicValue])
+        val value = DynamicValue.Map(
+          DynamicValue.int(1)        -> DynamicValue.string("one"),
+          DynamicValue.string("two") -> DynamicValue.int(2)
+        )
+
+        val encoded = codec.encoder.toBsonValue(value).asDocument()
+        val entries = encoded.getArray("$zio_dynamic_map")
+        val first   = entries.get(0).asDocument()
+        val second  = entries.get(1).asDocument()
+        val decoded = codec.decoder.fromBsonValueUnsafe(encoded, Nil, BsonDecoder.BsonDecoderContext.default)
+
+        assertTrue(
+          entries.size() == 2,
+          first.getInt32("key").getValue() == 1,
+          first.getString("value").getValue() == "one",
+          second.getString("key").getValue() == "two",
+          second.getInt32("value").getValue() == 2,
+          decoded == value
+        )
+      },
+      test("BSON-native dynamic primitives round-trip") {
+        val codec   = BsonSchemaCodec.bsonCodec(Schema[DynamicValue])
+        val instant = Instant.parse("2026-04-22T12:34:56Z")
+        val uuid    = UUID.fromString("123e4567-e89b-12d3-a456-426614174000")
+        val value   = DynamicValue.Record(
+          "amount" -> DynamicValue.bigDecimal(BigDecimal("12.34")),
+          "when"   -> new DynamicValue.Primitive(new PrimitiveValue.Instant(instant)),
+          "id"     -> new DynamicValue.Primitive(new PrimitiveValue.UUID(uuid))
+        )
+
+        val encoded = codec.encoder.toBsonValue(value).asDocument()
+        val decoded = codec.decoder.fromBsonValueUnsafe(encoded, Nil, BsonDecoder.BsonDecoderContext.default)
+
+        assertTrue(
+          encoded.get("amount").getBsonType().name() == "DECIMAL128",
+          encoded.get("when").getBsonType().name() == "DATE_TIME",
+          encoded.get("id").getBsonType().name() == "BINARY",
+          decoded == value
+        )
+      },
+      test("invalid dynamic map entry fails decoding") {
+        val codec   = BsonSchemaCodec.bsonCodec(Schema[DynamicValue])
+        val invalid = BsonDocument.parse("""{"$zio_dynamic_map":[1]}""")
+
+        val result = codec.decoder.fromBsonValue(invalid)
+
+        assertTrue(result.isLeft)
       }
     ),
     suite("Schema.fromJsonSchema")(
