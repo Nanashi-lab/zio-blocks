@@ -35,8 +35,11 @@ object Person {
   implicit val schema: Schema[Person] = Schema.derived
 }
 
-// Derive the BSON codec
-val codec: BsonCodec[Person] = BsonSchemaCodec.bsonCodec(Person.schema)
+// Derive the BSON codec through the shared type-class derivation framework
+val codec: BsonCodec[Person] = Person.schema.derive(BsonCodecDeriver)
+
+// The existing compatibility facade derives through the same deriver:
+val compatibleCodec: BsonCodec[Person] = BsonSchemaCodec.bsonCodec(Person.schema)
 
 // Encode to BSON Value
 val person = Person("Alice", 30)
@@ -49,17 +52,19 @@ val decoded: Person = codec.decoder.fromBsonValueUnsafe(bson, Nil, BsonDecoder.B
 
 ### Configuration
 
-You can customize the codec generation using `BsonSchemaCodec.Config`.
+You can customize codec generation directly on `BsonCodecDeriver`.
 
 ```scala
-val config = BsonSchemaCodec.Config
+val deriver = BsonCodecDeriver
   .withIgnoreExtraFields(false)          // Fail on unknown fields
   .withSumTypeHandling(                  // Customize ADT encoding
     BsonSchemaCodec.SumTypeHandling.DiscriminatorField("_type")
   )
 
-val codec = BsonSchemaCodec.bsonCodec(Person.schema, config)
+val codec = Person.schema.derive(deriver)
 ```
+
+`BsonSchemaCodec.Config` and `BsonSchemaCodec.bsonCodec(schema, config)` remain available for compatibility.
 
 #### Available Configuration Options
 

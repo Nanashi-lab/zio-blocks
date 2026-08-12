@@ -26,15 +26,15 @@ import zio.blocks.typeid.{Owner, TypeId}
  *
  * The ObjectId is represented as a wrapper around String (hex representation),
  * but when encoded to BSON, it uses the native BsonType.OBJECT_ID (12-byte
- * format) via special handling in BsonSchemaCodec.
+ * format) via special handling in BsonCodecDeriver.
  */
 object ObjectIdSupport {
 
   /**
    * Schema for org.bson.types.ObjectId.
    *
-   * Manually constructed with typeId for "ObjectId" so BsonSchemaCodec can
-   * detect it and use zio-bson's native BsonCodec[ObjectId] (encodes as
+   * Manually constructed with typeId for "ObjectId" so BsonCodecDeriver can
+   * detect it and use the native BsonCodec[ObjectId] (encodes as
    * BsonType.OBJECT_ID).
    */
   implicit val objectIdSchema: Schema[ObjectId] = new Schema(

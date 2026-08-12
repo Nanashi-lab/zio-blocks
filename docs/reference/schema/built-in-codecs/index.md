@@ -4,7 +4,7 @@ title: "Built-in Formats and Codecs"
 sidebar_label: "Built-in Formats and Codecs"
 ---
 
-ZIO Blocks Schema provides codec derivation for multiple serialization formats. Once you have a `Schema[A]` for your data type, you can derive codecs for most formats using the unified `Schema.derive(Format)` pattern. BSON uses a different API: `BsonSchemaCodec.bsonCodec(schema)`. See the [Format documentation](../format.md) for details on how formats work.
+ZIO Blocks Schema provides codec derivation for multiple serialization formats. Once you have a `Schema[A]`, format-backed codecs use `Schema.derive(Format)`. BSON uses its native BSON value/reader/writer API and is derived with `Schema[A].derive(BsonCodecDeriver)`; `BsonSchemaCodec.bsonCodec(schema)` remains as a compatibility facade. See the [Format documentation](../format.md) for details on format-backed codecs.
 
 ## Built-in Codecs
 
@@ -14,7 +14,7 @@ Here's a summary of the codecs currently supported by ZIO Blocks. Most codecs pr
 |---------------------|-----------------------|-----------------------|---------------------------------|---------------------------------|
 | `JsonFormat`        | `JsonCodec[A]`        | `application/json`    | `zio-blocks-schema`             | [JSON](./json/index.md)         |
 | `AvroFormat`        | `AvroCodec[A]`        | `application/avro`    | `zio-blocks-schema-avro`        | [Avro](./avro.md)               |
-| `BsonSchemaCodec`   | `BsonCodec[A]`        | `application/bson`    | `zio-blocks-schema-bson`        | [BSON](./bson.md)               |
+| `BsonCodecDeriver`  | `BsonCodec[A]`        | `application/bson`    | `zio-blocks-schema-bson`        | [BSON](./bson.md)               |
 | `CsvFormat`         | `CsvCodec[A]`         | `text/csv`            | `zio-blocks-schema-csv`         | [CSV](./csv.md)                 |
 | `MessagePackFormat` | `MessagePackCodec[A]` | `application/msgpack` | `zio-blocks-schema-messagepack` | [MessagePack](./messagepack.md) |
 | `ThriftFormat`      | `ThriftCodec[A]`      | `application/thrift`  | `zio-blocks-schema-thrift`      | [Thrift](./thrift.md)           |
