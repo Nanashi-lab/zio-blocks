@@ -183,7 +183,7 @@ private[async] object AsyncDcaTransform {
               def loop0(): Async[Unit]      = {
                 var out: Async[Unit] = null.asInstanceOf[Async[Unit]]
                 while (out == null) {
-                  if (!${ condT.asExprOf[Boolean] }) out = Async.succeed(())
+                  if (! ${ condT.asExprOf[Boolean] }) out = Async.succeed(())
                   else {
                     val b: Any = bodyFn()
                     if (b.isInstanceOf[Pollable[?]])
